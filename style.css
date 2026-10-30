@@ -347,3 +347,19 @@ body {
     border: 1px solid #ccc; 
     border-radius: 5px;
 }
+/* Custom Logo Styling */
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.logo-img {
+    height: 40px;   /* লোগোর উচ্চতা আপনার প্রয়োজনমতো কমাতে বা বাড়াতে পারেন */
+    width: auto;
+    object-fit: contain;
+}
