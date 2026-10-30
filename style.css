@@ -497,3 +497,29 @@ html {
         transform: scale(1);
     }
 }
+/* --- Scroll Reveal Animation Classes --- */
+
+/* ডিফল্ট অবস্থায় এলিমেন্টগুলো লুকালে থাকবে এবং একটু সাইডে সরে থাকবে */
+.reveal-left {
+    opacity: 0;
+    transform: translateX(-50px);
+    transition: all 0.8s ease-out;
+}
+
+.reveal-right {
+    opacity: 0;
+    transform: translateX(50px);
+    transition: all 0.8s ease-out;
+}
+
+.reveal-up {
+    opacity: 0;
+    transform: translateY(50px);
+    transition: all 0.8s ease-out;
+}
+
+/* যখন স্ক্রল করে এলিমেন্টে পৌঁছাবে, তখন এই ক্লাসটি জাভাস্ক্রিপ্ট দ্বারা যোগ হবে */
+.active-reveal {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+}
