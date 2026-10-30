@@ -363,3 +363,83 @@ body {
     width: auto;
     object-fit: contain;
 }
+/* Smooth Scrolling & Modern Enhancements */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Header Animation & Glass Effect */
+.header {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+/* Logo Hover Animation */
+.logo-img {
+    transition: transform 0.3s ease;
+}
+
+.logo:hover .logo-img {
+    transform: scale(1.05);
+}
+
+/* Nav Links Hover Effect */
+.nav-links a {
+    position: relative;
+}
+
+.nav-links a::after {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 2px;
+    bottom: -4px;
+    left: 0;
+    background-color: #2563eb;
+    transition: width 0.3s ease;
+}
+
+.nav-links a:hover::after {
+    width: 100%;
+}
+
+/* Hero Section Modern Gradient & Fade-in Animation */
+.hero {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #bfdbfe 100%);
+    position: relative;
+    overflow: hidden;
+    animation: fadeIn 1s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Modern Card Hover Animations */
+.feature-card, .teacher-card, .course-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.feature-card:hover, .teacher-card:hover, .course-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.1);
+}
+
+/* Modern Button Pulse/Hover Effect */
+.btn-primary {
+    position: relative;
+    overflow: hidden;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
