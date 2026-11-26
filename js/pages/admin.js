@@ -894,3 +894,213 @@ sections['enrollment'] = async ({ root }) => {
       if (e.key === 'Enter') searchStudent();
     });
 };
+
+sections['inbox'] = async ({ root }) => {
+  let student = null;
+  let messages = [];
+
+  put(root, html`
+    <div class="toolbar">
+      <h2>One Way Inbox</h2>
+    </div>
+
+    <div class="card pad">
+      <div class="field">
+        <label>শিক্ষার্থীর মোবাইল নম্বর</label>
+
+        <div class="row gap">
+          <input id="inbox-phone" type="tel"
+            placeholder="মোবাইল নম্বর লিখুন"/>
+
+          <button class="btn primary" id="inbox-search">
+            খুঁজুন
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="inbox-result" class="mt"></div>
+  `);
+
+  const searchStudent = async () => {
+    const phone = $('#inbox-phone', root).value.trim();
+
+    if (!phone) {
+      return toast('মোবাইল নম্বর লিখুন।', 'err');
+    }
+
+    const btn = $('#inbox-search', root);
+    btnBusy(btn, true, 'খোঁজা হচ্ছে…');
+
+    try {
+      student = null;
+      messages = [];
+
+      const profiles = must(
+        await sb.from('profiles')
+          .select('id,full_name,mobile,class_level,role')
+          .ilike('mobile', `%${phone}%`)
+          .eq('role', 'student')
+          .limit(1)
+      );
+
+      if (!profiles.length) {
+        put($('#inbox-result', root), html`
+          <div class="card pad center">
+            <h3>শিক্ষার্থী পাওয়া যায়নি</h3>
+            <p class="muted">
+              মোবাইল নম্বরটি পরীক্ষা করুন।
+            </p>
+          </div>
+        `);
+        return;
+      }
+
+      student = profiles[0];
+
+      messages = must(
+        await sb.from('inbox_messages')
+          .select('*')
+          .eq('user_id', student.id)
+          .order('created_at', { ascending: false })
+      );
+
+      drawInbox();
+
+    } catch (e) {
+      toast(errMsg(e), 'err');
+    } finally {
+      btnBusy(btn, false);
+    }
+  };
+
+  const drawInbox = () => {
+    put($('#inbox-result', root), html`
+      <div class="card pad">
+        <h3>শিক্ষার্থীর তথ্য</h3>
+
+        <div class="grid g-stats">
+          <div>
+            <span class="muted">নাম</span>
+            <b>${student.full_name || '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">মোবাইল</span>
+            <b>${student.mobile || '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">শ্রেণি</span>
+            <b>${student.class_level
+              ? classLabel(student.class_level)
+              : '—'}</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="card pad mt">
+        <h3>নতুন মেসেজ পাঠান</h3>
+
+        <div class="field">
+          <label>Subject</label>
+          <input id="inbox-subject"
+            placeholder="মেসেজের বিষয় লিখুন"/>
+        </div>
+
+        <div class="field">
+          <label>Message</label>
+          <textarea id="inbox-message"
+            rows="5"
+            placeholder="আপনার মেসেজ লিখুন"></textarea>
+        </div>
+
+        <button class="btn primary" id="inbox-send">
+          মেসেজ পাঠান
+        </button>
+      </div>
+
+      <div class="card pad mt">
+        <h3>পাঠানো মেসেজ</h3>
+
+        ${messages.length
+          ? html`
+            <div class="stack gap">
+              ${messages.map(m => html`
+                <div class="card pad">
+                  <b>${m.subject}</b>
+
+                  <p>${m.message}</p>
+
+                  <div class="muted">
+                    ${m.created_at
+                      ? fmtDT(m.created_at)
+                      : '—'}
+                  </div>
+
+                  <span class="badge">
+                    ${m.is_read ? 'পড়া হয়েছে' : 'পড়া হয়নি'}
+                  </span>
+                </div>
+              `)}
+            </div>
+          `
+          : html`
+            <p class="muted">
+              এখনো কোনো মেসেজ পাঠানো হয়নি।
+            </p>
+          `}
+      </div>
+    `);
+
+    $('#inbox-send', root).addEventListener(
+      'click',
+      async () => {
+        const subject = $('#inbox-subject', root)
+          .value.trim();
+
+        const message = $('#inbox-message', root)
+          .value.trim();
+
+        if (!subject || !message) {
+          return toast(
+            'Subject ও Message দুটোই লিখুন।',
+            'err'
+          );
+        }
+
+        const btn = $('#inbox-send', root);
+        btnBusy(btn, true, 'পাঠানো হচ্ছে…');
+
+        try {
+          must(
+            await sb.from('inbox_messages')
+              .insert({
+                user_id: student.id,
+                subject,
+                message,
+                sent_by: uid()
+              })
+          );
+
+          toast('মেসেজ সফলভাবে পাঠানো হয়েছে।');
+
+          await searchStudent();
+
+        } catch (e) {
+          toast(errMsg(e), 'err');
+        } finally {
+          btnBusy(btn, false);
+        }
+      }
+    );
+  };
+
+  $('#inbox-search', root)
+    .addEventListener('click', searchStudent);
+
+  $('#inbox-phone', root)
+    .addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchStudent();
+    });
+};
