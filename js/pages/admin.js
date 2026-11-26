@@ -379,3 +379,268 @@ sections.settings = async ({ root }) => {
     try { await saveSetting('payment', { ...pay, ...v }); toast('সংরক্ষিত হয়েছে।'); } catch (err) { toast(errMsg(err), 'err'); } btnBusy(btn, false);
   });
 };
+
+/* =========================================================
+   CLASSICAL ACADEMY — MODERATOR FREE TRIAL SUBSCRIPTION
+========================================================= */
+
+sections['free-trial'] = async ({ root }) => {
+  let student = null;
+  let enrollments = [];
+  let courses = [];
+  let trials = [];
+
+  put(root, html`
+    <div class="toolbar">
+      <h2>Free Trial Subscription</h2>
+    </div>
+
+    <div class="card pad">
+      <div class="field">
+        <label>শিক্ষার্থীর মোবাইল নম্বর</label>
+
+        <div class="row gap">
+          <input
+            id="trial-phone"
+            type="tel"
+            placeholder="মোবাইল নম্বর লিখুন"
+          />
+
+          <button class="btn primary" id="trial-search">
+            খুঁজুন
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="trial-result" class="mt"></div>
+  `);
+
+  const searchStudent = async () => {
+    const phone = $('#trial-phone', root).value.trim();
+
+    if (!phone) {
+      return toast('মোবাইল নম্বর লিখুন।', 'err');
+    }
+
+    const btn = $('#trial-search', root);
+    btnBusy(btn, true, 'খোঁজা হচ্ছে…');
+
+    try {
+      student = null;
+      enrollments = [];
+      courses = [];
+      trials = [];
+
+      const profile = must(
+        await sb.from('profiles')
+          .select('*')
+          .ilike('mobile', `%${phone}%`)
+          .eq('role', 'student')
+          .limit(1)
+      );
+
+      if (!profile.length) {
+        put($('#trial-result', root), html`
+          <div class="card pad center">
+            <h3>শিক্ষার্থী পাওয়া যায়নি</h3>
+            <p class="muted">
+              মোবাইল নম্বরটি সঠিক কিনা পরীক্ষা করুন।
+            </p>
+          </div>
+        `);
+        return;
+      }
+
+      student = profile[0];
+
+      enrollments = must(
+        await sb.from('enrollments')
+          .select('course_id, created_at')
+          .eq('user_id', student.id)
+      );
+
+      const courseIds = enrollments.map(e => e.course_id);
+
+      if (courseIds.length) {
+        courses = must(
+          await sb.from('courses')
+            .select('id,title,class_level,price')
+            .in('id', courseIds)
+        );
+
+        trials = must(
+          await sb.from('free_trial_subscriptions')
+            .select('*')
+            .eq('user_id', student.id)
+        );
+      }
+
+      drawStudent();
+
+    } catch (e) {
+      toast(errMsg(e), 'err');
+    } finally {
+      btnBusy(btn, false);
+    }
+  };
+
+  const drawStudent = () => {
+    const activeTrial = (courseId) =>
+      trials.find(t =>
+        t.course_id === courseId &&
+        t.status === 'enabled' &&
+        new Date(t.end_at) > new Date()
+      );
+
+    put($('#trial-result', root), html`
+      <div class="card pad">
+        <h3>শিক্ষার্থীর তথ্য</h3>
+
+        <div class="grid g-stats">
+          <div>
+            <span class="muted">নাম</span>
+            <b>${student.full_name || '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">মোবাইল</span>
+            <b>${student.mobile || '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">শ্রেণি</span>
+            <b>${student.class_level
+              ? classLabel(student.class_level)
+              : '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">বিভাগ</span>
+            <b>${student.group_name
+              ? groupLabel(student.group_name)
+              : '—'}</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="card pad mt">
+        <h3>Enrolled Programs</h3>
+
+        ${courses.length
+          ? html`
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Program Name</th>
+                    <th>Enrollment Type</th>
+                    <th>Free Trial</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${courses.map(c => {
+                    const trial = activeTrial(c.id);
+
+                    return html`
+                      <tr>
+                        <td>
+                          <b>${c.title}</b>
+                        </td>
+
+                        <td>
+                          ${Number(c.price) > 0
+                            ? 'Paid'
+                            : 'Free'}
+                        </td>
+
+                        <td>
+                          ${trial
+                            ? 'Enabled'
+                            : 'Not Enabled'}
+                        </td>
+
+                        <td>
+                          ${trial
+                            ? html`
+                              <span class="badge">
+                                Trial Active
+                              </span>
+                            `
+                            : html`
+                              <button
+                                class="btn primary sm"
+                                data-trial="${c.id}"
+                              >
+                                Enable Trial
+                              </button>
+                            `}
+                        </td>
+                      </tr>
+                    `;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          `
+          : html`
+            <p class="muted">
+              এই শিক্ষার্থী এখনো কোনো কোর্সে ভর্তি হয়নি।
+            </p>
+          `}
+      </div>
+    `);
+
+    $$('[data-trial]', root).forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const courseId = btn.dataset.trial;
+
+        if (!(await confirmBox(
+          'এই কোর্সের Free Trial ৭ দিনের জন্য চালু করবেন?',
+          {
+            danger: false,
+            yes: 'Trial চালু করুন'
+          }
+        ))) return;
+
+        try {
+          const now = new Date();
+          const end = new Date(
+            now.getTime() + 7 * 24 * 60 * 60 * 1000
+          );
+
+          must(
+            await sb.from('free_trial_subscriptions')
+              .upsert({
+                user_id: student.id,
+                course_id: courseId,
+                status: 'enabled',
+                start_at: now.toISOString(),
+                end_at: end.toISOString(),
+                granted_by: uid()
+              }, {
+                onConflict: 'user_id,course_id'
+              })
+          );
+
+          toast('Free Trial Subscription ENABLED');
+
+          await searchStudent();
+
+        } catch (e) {
+          toast(errMsg(e), 'err');
+        }
+      });
+    });
+  };
+
+  $('#trial-search', root)
+    .addEventListener('click', searchStudent);
+
+  $('#trial-phone', root)
+    .addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchStudent();
+    });
+};
