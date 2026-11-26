@@ -73,7 +73,7 @@ export async function home({ root }) {
     </div>
 
     <div class="section"><div class="quick">
-      ${[['/courses', 'courses', 'কোর্স'], ['/store', 'store', 'স্টোর'], ['/library', 'library', 'লাইব্রেরি'], ['/exams', 'exam', 'পরীক্ষা'], ['/profile/doubt', 'help', 'ডাউট সলভ'], ['/profile/bookmarks', 'bookmark', 'বুকমার্ক']]
+      ${[['/courses', 'courses', 'কোর্স'], ['/store', 'store', 'স্টোর'], ['/library', 'library', 'লাইব্রেরি'], ['/exams', 'exam', 'পরীক্ষা'], ['/inbox', 'mail', 'ইনবক্স'], ['/profile/doubt', 'help', 'ডাউট সলভ'], ['/profile/bookmarks', 'bookmark', 'বুকমার্ক']]
         .map(([to, ic, t]) => html`<a href="#${to}">${icon(ic, 26)}<span>${t}</span></a>`)}</div></div>
 
     ${live.length ? html`<div class="section"><div class="section-head"><h2>লাইভ ক্লাস</h2></div><div class="list">
@@ -417,3 +417,101 @@ export async function library({ root, query }) {
   ['#q'].forEach((s) => $(s, root).addEventListener('input', debounce(draw, 150))); $('#cls', root).addEventListener('change', draw); $('#subj', root).addEventListener('change', draw);
   draw();
 }
+
+// ------------------------------------------------------------------ Student Inbox
+export async function inbox({ root }) {
+  put(root, html`
+    <div class="section-head">
+      <h2>আমার ইনবক্স</h2>
+    </div>
+    <div id="student-inbox-list">
+      <div class="card pad center">
+        <p class="muted">মেসেজ লোড হচ্ছে…</p>
+      </div>
+    </div>
+  `);
+
+  const loadMessages = async () => {
+    try {
+      const messages = must(
+        await sb.from('inbox_messages')
+          .select('id, subject, message, is_read, created_at')
+          .eq('user_id', uid())
+          .order('created_at', { ascending: false })
+      );
+
+      const unread = messages.filter((m) => !m.is_read).length;
+
+      put($('#student-inbox-list', root), html`
+        <div class="card pad mb">
+          <div class="row between">
+            <span>মোট মেসেজ</span>
+            <b>${bn(messages.length)}</b>
+          </div>
+          <div class="row between mt">
+            <span>নতুন মেসেজ</span>
+            <b>${bn(unread)}</b>
+          </div>
+        </div>
+
+        ${messages.length
+          ? html`
+            <div class="stack gap">
+              ${messages.map((m) => html`
+                <div class="card pad">
+                  <div class="row between wrap gap">
+                    <h3>${m.subject || 'নতুন মেসেজ'}</h3>
+                    <span class="badge ${m.is_read ? '' : 'free'}">
+                      ${m.is_read ? 'পড়া হয়েছে' : 'নতুন মেসেজ'}
+                    </span>
+                  </div>
+                  <p class="mt" style="white-space:pre-line">${m.message}</p>
+                  <p class="muted small mt">${fmtDT(m.created_at)}</p>
+                  ${!m.is_read
+                    ? html`
+                      <button class="btn soft sm mt" data-read="${m.id}">
+                        পড়া হয়েছে চিহ্নিত করুন
+                      </button>
+                    `
+                    : ''}
+                </div>
+              `)}
+            </div>
+          `
+          : html`
+            <div class="card">
+              ${empty('আপনার ইনবক্সে এখনো কোনো মেসেজ নেই।', 'mail')}
+            </div>
+          `}
+      `);
+
+      $$('[data-read]', root).forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          btnBusy(btn, true, 'আপডেট হচ্ছে…');
+          try {
+            must(
+              await sb.from('inbox_messages')
+                .update({ is_read: true })
+                .eq('id', btn.dataset.read)
+                .eq('user_id', uid())
+            );
+            toast('মেসেজ পড়া হয়েছে।');
+            await loadMessages();
+          } catch (e) {
+            toast(errMsg(e), 'err');
+            btnBusy(btn, false);
+          }
+        });
+      });
+    } catch (e) {
+      put($('#student-inbox-list', root), html`
+        <div class="card pad">
+          <p class="muted">মেসেজ লোড করা যায়নি।</p>
+        </div>
+      `);
+      toast(errMsg(e), 'err');
+    }
+  };
+
+  await loadMessages();
+          }
