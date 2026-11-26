@@ -644,3 +644,253 @@ sections['free-trial'] = async ({ root }) => {
       if (e.key === 'Enter') searchStudent();
     });
 };
+
+sections['enrollment'] = async ({ root }) => {
+  let student = null;
+  let enrolled = [];
+  let allCourses = [];
+
+  put(root, html`
+    <div class="toolbar">
+      <h2>Student Enrollment</h2>
+    </div>
+
+    <div class="card pad">
+      <div class="field">
+        <label>শিক্ষার্থীর মোবাইল নম্বর</label>
+        <div class="row gap">
+          <input id="enroll-phone" type="tel"
+            placeholder="মোবাইল নম্বর লিখুন"/>
+          <button class="btn primary" id="enroll-search">
+            খুঁজুন
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="enroll-result" class="mt"></div>
+  `);
+
+  const searchStudent = async () => {
+    const phone = $('#enroll-phone', root).value.trim();
+
+    if (!phone) {
+      return toast('মোবাইল নম্বর লিখুন।', 'err');
+    }
+
+    const btn = $('#enroll-search', root);
+    btnBusy(btn, true, 'খোঁজা হচ্ছে…');
+
+    try {
+      student = null;
+      enrolled = [];
+      allCourses = [];
+
+      const profiles = must(
+        await sb.from('profiles')
+          .select('id,full_name,mobile,class_level,role')
+          .ilike('mobile', `%${phone}%`)
+          .eq('role', 'student')
+          .limit(1)
+      );
+
+      if (!profiles.length) {
+        put($('#enroll-result', root), html`
+          <div class="card pad center">
+            <h3>শিক্ষার্থী পাওয়া যায়নি</h3>
+            <p class="muted">
+              মোবাইল নম্বরটি পরীক্ষা করুন।
+            </p>
+          </div>
+        `);
+        return;
+      }
+
+      student = profiles[0];
+
+      enrolled = must(
+        await sb.from('enrollments')
+          .select('id,user_id,course_id,created_at')
+          .eq('user_id', student.id)
+      );
+
+      allCourses = must(
+        await sb.from('courses')
+          .select('id,title,class_level')
+      );
+
+      drawEnrollment();
+
+    } catch (e) {
+      toast(errMsg(e), 'err');
+    } finally {
+      btnBusy(btn, false);
+    }
+  };
+
+  const drawEnrollment = () => {
+    const enrolledIds = enrolled.map(e => e.course_id);
+
+    const availableCourses = allCourses.filter(
+      c => !enrolledIds.includes(c.id)
+    );
+
+    put($('#enroll-result', root), html`
+      <div class="card pad">
+        <h3>শিক্ষার্থীর তথ্য</h3>
+
+        <div class="grid g-stats">
+          <div>
+            <span class="muted">নাম</span>
+            <b>${student.full_name || '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">মোবাইল</span>
+            <b>${student.mobile || '—'}</b>
+          </div>
+
+          <div>
+            <span class="muted">শ্রেণি</span>
+            <b>${student.class_level
+              ? classLabel(student.class_level)
+              : '—'}</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="card pad mt">
+        <h3>কোর্সে ভর্তি করুন</h3>
+
+        ${availableCourses.length
+          ? html`
+            <div class="field">
+              <label>কোর্স নির্বাচন করুন</label>
+
+              <select id="enroll-course">
+                <option value="">কোর্স নির্বাচন করুন</option>
+
+                ${availableCourses.map(c => html`
+                  <option value="${c.id}">
+                    ${c.title}
+                  </option>
+                `)}
+              </select>
+            </div>
+
+            <button class="btn primary mt"
+              id="enroll-submit">
+              ভর্তি করুন
+            </button>
+          `
+          : html`
+            <p class="muted">
+              সব কোর্সে শিক্ষার্থী ইতিমধ্যে ভর্তি আছে।
+            </p>
+          `}
+      </div>
+
+      <div class="card pad mt">
+        <h3>ভর্তিকৃত কোর্স</h3>
+
+        ${enrolled.length
+          ? html`
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>কোর্সের নাম</th>
+                    <th>ভর্তির তারিখ</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${enrolled.map(e => {
+                    const course = allCourses.find(
+                      c => c.id === e.course_id
+                    );
+
+                    return html`
+                      <tr>
+                        <td>${course?.title || 'কোর্স'}</td>
+                        <td>
+                          ${e.created_at
+                            ? fmtDate(e.created_at)
+                            : '—'}
+                        </td>
+                      </tr>
+                    `;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          `
+          : html`
+            <p class="muted">
+              শিক্ষার্থী এখনো কোনো কোর্সে ভর্তি হয়নি।
+            </p>
+          `}
+      </div>
+    `);
+
+    const submit = $('#enroll-submit', root);
+
+    if (submit) {
+      submit.addEventListener('click', async () => {
+        const courseId = $('#enroll-course', root).value;
+
+        if (!courseId) {
+          return toast('একটি কোর্স নির্বাচন করুন।', 'err');
+        }
+
+        if (!(await confirmBox(
+          'শিক্ষার্থীকে এই কোর্সে ভর্তি করবেন?',
+          {
+            danger: false,
+            yes: 'ভর্তি করুন'
+          }
+        ))) return;
+
+        btnBusy(submit, true, 'ভর্তি হচ্ছে…');
+
+        try {
+          const exists = enrolled.some(
+            e => e.course_id === courseId
+          );
+
+          if (exists) {
+            return toast(
+              'শিক্ষার্থী ইতিমধ্যে এই কোর্সে ভর্তি আছে।',
+              'err'
+            );
+          }
+
+          must(
+            await sb.from('enrollments')
+              .insert({
+                user_id: student.id,
+                course_id: courseId
+              })
+          );
+
+          toast('শিক্ষার্থী সফলভাবে ভর্তি হয়েছে।');
+
+          await searchStudent();
+
+        } catch (e) {
+          toast(errMsg(e), 'err');
+        } finally {
+          btnBusy(submit, false);
+        }
+      });
+    }
+  };
+
+  $('#enroll-search', root)
+    .addEventListener('click', searchStudent);
+
+  $('#enroll-phone', root)
+    .addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchStudent();
+    });
+};
