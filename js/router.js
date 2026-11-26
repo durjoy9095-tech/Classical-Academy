@@ -35,7 +35,11 @@ export const ADMIN_NAV = [
   { to: '/admin/orders', label: 'অর্ডার', ic: 'receipt', roles: ['super_admin', 'admin'] },
   { to: '/admin/payments', label: 'পেমেন্ট', ic: 'tag', roles: ['super_admin', 'admin'] },
   { to: '/admin/announcements', label: 'ঘোষণা', ic: 'bell', roles: ['super_admin', 'admin', 'moderator'] },
-  { to: '/admin/support', label: 'সাপোর্ট ও ডাউট', ic: 'chat', roles: ['super_admin', 'admin', 'moderator', 'teacher'] },
+  
+  { to: '/admin/free-trial', label: 'Free Trial Subscription', ic: 'book-open', roles: ['super_admin', 'admin', 'moderator'] },
+  { to: '/admin/enrollment', label: 'Student Enrollment', ic: 'users', roles: ['super_admin', 'admin', 'moderator'] },
+  { to: '/admin/inbox', label: 'One Way Inbox', ic: 'mail', roles: ['super_admin', 'admin', 'moderator'] },
+
   { to: '/admin/welcome', label: 'ওয়েলকাম পেজ', ic: 'globe', roles: ['super_admin'] },
   { to: '/admin/settings', label: 'সাইট সেটিংস', ic: 'settings', roles: ['super_admin'] },
 ];
