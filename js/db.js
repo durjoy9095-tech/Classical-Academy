@@ -14,7 +14,8 @@ export let sb = null;
 
 export const state = {
   session: null,
-  profile: null
+  profile: null,
+  authReady: false
 };
 
 const listeners = new Set();
@@ -25,66 +26,106 @@ export const onAuth = (fn) => {
 };
 
 const emit = (evt) => {
-  listeners.forEach((f) => f(evt));
+  listeners.forEach((fn) => {
+    try {
+      fn(evt);
+    } catch (error) {
+      console.error('Auth listener error:', error);
+    }
+  });
 };
 
 export async function initBackend() {
-  if (!configured) return false;
+  if (!configured) {
+    state.authReady = true;
+    return false;
+  }
+
+  if (sb) return true;
 
   const { createClient } = await import(SDK);
 
   sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    // PKCE keeps the URL hash free for our #/ router.
-    // sessionStorage keeps each browser tab's login separate.
     auth: {
       flowType: 'pkce',
+
+      // আলাদা Tab-এ আলাদা Login Session
       storage: window.sessionStorage,
+
+      // Refresh-এর পর Session বজায় থাকবে
       persistSession: true,
+
+      // Token স্বয়ংক্রিয়ভাবে Refresh হবে
       autoRefreshToken: true,
+
+      // Login/Recovery Redirect Session শনাক্ত করবে
       detectSessionInUrl: true
     }
   });
 
-  // Subscribe BEFORE reading the session so PASSWORD_RECOVERY
-  // and SIGNED_IN events are not missed.
+  // Auth listener আগে চালু করা হচ্ছে
   sb.auth.onAuthStateChange((evt, session) => {
     state.session = session;
 
-    // Never await Supabase calls inside this callback.
-    setTimeout(async () => {
+    // Supabase Auth callback-এর ভিতরে সরাসরি await করা যাবে না
+    Promise.resolve().then(async () => {
       if (evt === 'PASSWORD_RECOVERY') {
         location.hash = '#/reset-password';
+        emit('password_recovery');
         return;
       }
 
       if (evt === 'SIGNED_OUT') {
+        state.session = null;
         state.profile = null;
+
         emit('signed_out');
         return;
       }
 
       if (
-        evt === 'SIGNED_IN' &&
-        session &&
-        state.profile?.id !== session.user.id
+        (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED') &&
+        session
       ) {
-        await loadProfile();
-        registerDevice();
+        state.session = session;
+
+        if (state.profile?.id !== session.user.id) {
+          await loadProfile();
+        }
+
+        if (state.profile) {
+          registerDevice();
+        }
+
         emit('signed_in');
       }
-    }, 0);
+
+      if (evt === 'USER_UPDATED' && session) {
+        state.session = session;
+        emit('user_updated');
+      }
+    }).catch((error) => {
+      console.error('Auth event error:', error);
+    });
   });
 
-  const { data } = await sb.auth.getSession();
+  // আগের Session পড়া
+  const { data, error } = await sb.auth.getSession();
 
-  state.session = data.session;
+  if (error) {
+    console.error('Session restore error:', error);
+  }
+
+  state.session = data?.session || null;
 
   if (state.session) {
     await loadProfile();
+  } else {
+    state.profile = null;
   }
 
-  // Tidy ?code=... left by the PKCE redirect.
-  if (location.search) {
+  // PKCE callback-এর ?code= URL পরিষ্কার করা
+  if (location.search.includes('code=')) {
     history.replaceState(
       null,
       '',
@@ -96,29 +137,40 @@ export async function initBackend() {
     registerDevice();
   }
 
+  // Auth initialization সম্পূর্ণ
+  state.authReady = true;
+
+  emit('auth_ready');
+
   return true;
 }
 
 export async function loadProfile() {
-  if (!state.session) {
+  if (!state.session?.user?.id || !sb) {
     state.profile = null;
     return null;
   }
 
+  const userId = state.session.user.id;
+
   for (let i = 0; i < 3; i++) {
-    // The signup trigger may lag a moment.
-    const { data } = await sb
+    const { data, error } = await sb
       .from('profiles')
       .select('*')
-      .eq('id', state.session.user.id)
+      .eq('id', userId)
       .maybeSingle();
+
+    if (error) {
+      console.error('Profile loading error:', error);
+    }
 
     if (data) {
       state.profile = data;
       return data;
     }
 
-    await new Promise((r) => setTimeout(r, 500));
+    // Signup trigger তৈরি হতে সামান্য সময় লাগতে পারে
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   state.profile = null;
@@ -136,10 +188,16 @@ export const isAdminUp = () =>
   ['super_admin', 'admin'].includes(role());
 
 export async function signOut() {
-  await sb.auth.signOut();
+  if (!sb) return;
+
+  const { error } = await sb.auth.signOut();
+
+  if (error) throw error;
 
   state.session = null;
   state.profile = null;
+
+  emit('signed_out');
 }
 
 // ---------- device + activity ----------
@@ -156,23 +214,29 @@ export function deviceId() {
 }
 
 export async function registerDevice() {
-  if (!uid()) return;
+  if (!uid() || !sb) return;
 
-  await sb.from('devices').upsert(
-    {
-      user_id: uid(),
-      device_id: deviceId(),
-      label: deviceLabel(),
-      last_seen: new Date().toISOString()
-    },
-    {
-      onConflict: 'user_id,device_id'
-    }
-  );
+  const { error } = await sb
+    .from('devices')
+    .upsert(
+      {
+        user_id: uid(),
+        device_id: deviceId(),
+        label: deviceLabel(),
+        last_seen: new Date().toISOString()
+      },
+      {
+        onConflict: 'user_id,device_id'
+      }
+    );
+
+  if (error) {
+    console.warn('Device registration failed:', error.message);
+  }
 }
 
 export function logActivity(action, meta = {}) {
-  if (!uid()) return;
+  if (!uid() || !sb) return;
 
   sb.from('activity_log')
     .insert({
@@ -186,6 +250,8 @@ export function logActivity(action, meta = {}) {
 // ---------- settings ----------
 
 export async function getSetting(key) {
+  if (!sb) return {};
+
   const { data } = await sb
     .from('site_settings')
     .select('value')
@@ -197,8 +263,8 @@ export async function getSetting(key) {
 
 // ---------- storage ----------
 
-const safeName = (n) =>
-  n.toLowerCase()
+const safeName = (name) =>
+  name.toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'file';
 
@@ -208,6 +274,8 @@ const safeName = (n) =>
  * Private bucket returns the object path.
  */
 export async function uploadFile(bucket, file, folder = '') {
+  if (!sb) throw new Error('Supabase is not initialized');
+
   const path =
     `${folder ? folder + '/' : ''}${Date.now()}-${safeName(file.name)}`;
 
@@ -226,6 +294,8 @@ export async function uploadFile(bucket, file, folder = '') {
 }
 
 export async function signedUrl(path, secs = 3600, download) {
+  if (!sb) throw new Error('Supabase is not initialized');
+
   const { data, error } = await sb.storage
     .from('private-files')
     .createSignedUrl(
@@ -242,19 +312,27 @@ export async function signedUrl(path, secs = 3600, download) {
 // ---------- bookmarks ----------
 
 export async function getBookmarkSet() {
-  const { data } = await sb
+  if (!sb || !uid()) return new Set();
+
+  const { data, error } = await sb
     .from('bookmarks')
     .select('item_type,item_id')
     .eq('user_id', uid());
 
+  if (error) throw error;
+
   return new Set(
     (data || []).map(
-      (b) => `${b.item_type}:${b.item_id}`
+      (bookmark) => `${bookmark.item_type}:${bookmark.item_id}`
     )
   );
 }
 
 export async function toggleBookmark(type, id, on) {
+  if (!sb || !uid()) {
+    throw new Error('লগইন করা নেই');
+  }
+
   if (on) {
     const { error } = await sb
       .from('bookmarks')
@@ -275,4 +353,4 @@ export async function toggleBookmark(type, id, on) {
 
     if (error) throw error;
   }
-}
+            }
