@@ -71,6 +71,18 @@ export const STUDENT_NAV = [
     match: /^\/(exams|exam|result)/
   },
   {
+    to: '/messages',
+    label: 'মেসেজ',
+    ic: 'mail',
+    match: /^\/messages/
+  },
+  {
+    to: '/profile',
+    label: 'প্রোফাইল',
+    ic: 'user',
+    match: /^\/profile/
+  },
+  {
     to: '/profile',
     label: 'প্রোফাইল',
     ic: 'user',
