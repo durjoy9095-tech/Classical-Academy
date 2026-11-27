@@ -7,6 +7,7 @@ import {
 import {
   state, role, isStaff, signOut, onAuth
 } from './db.js';
+
 import { studentInbox } from './student-inbox.js';
 
 const routes = [];
@@ -25,6 +26,12 @@ export function route(pattern, handler, opts = {}) {
 
   routes.push({ re, keys, handler, opts });
 }
+
+// Student message inbox route
+route('/messages', studentInbox, {
+  auth: true,
+  layout: 'student'
+});
 
 export const navigate = (path) => {
   if (location.hash === '#' + path) {
@@ -51,7 +58,7 @@ export const STUDENT_NAV = [
     to: '/courses',
     label: 'কোর্স',
     ic: 'courses',
-    match: /^\/course/
+    match: /^\/courses/
   },
   {
     to: '/store',
@@ -76,12 +83,6 @@ export const STUDENT_NAV = [
     label: 'মেসেজ',
     ic: 'mail',
     match: /^\/messages/
-  },
-  {
-    to: '/profile',
-    label: 'প্রোফাইল',
-    ic: 'user',
-    match: /^\/profile/
   },
   {
     to: '/profile',
@@ -451,7 +452,6 @@ export async function render() {
 
     await loadProfile();
 
-    // অন্য route এ চলে গেলে পুরোনো render থামাও
     if (!state.profile) {
       put(
         a,
