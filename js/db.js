@@ -35,9 +35,45 @@ const emit = (evt) => {
   });
 };
 
+// ---------- Tab-specific persistent auth storage ----------
+
+// এই ID একই Tab-এ Refresh করলে থাকবে।
+// Chrome Tab restore করলে সাধারণত এটিও restore হয়।
+function getTabId() {
+  let id = sessionStorage.getItem('ca_auth_tab_id');
+
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem('ca_auth_tab_id', id);
+  }
+
+  return id;
+}
+
+// Supabase-এর Auth storage প্রতিটি Tab-এর জন্য আলাদা।
+function createTabAuthStorage() {
+  const tabId = getTabId();
+  const prefix = `ca_supabase_auth_${tabId}_`;
+
+  return {
+    getItem(key) {
+      return localStorage.getItem(prefix + key);
+    },
+
+    setItem(key, value) {
+      localStorage.setItem(prefix + key, value);
+    },
+
+    removeItem(key) {
+      localStorage.removeItem(prefix + key);
+    }
+  };
+}
+
 export async function initBackend() {
   if (!configured) {
     state.authReady = true;
+    emit('auth_ready');
     return false;
   }
 
@@ -49,25 +85,18 @@ export async function initBackend() {
     auth: {
       flowType: 'pkce',
 
-      // আলাদা Tab-এ আলাদা Login Session
-      storage: window.sessionStorage,
+      // Tab অনুযায়ী আলাদা Persistent Session
+      storage: createTabAuthStorage(),
 
-      // Refresh-এর পর Session বজায় থাকবে
       persistSession: true,
-
-      // Token স্বয়ংক্রিয়ভাবে Refresh হবে
       autoRefreshToken: true,
-
-      // Login/Recovery Redirect Session শনাক্ত করবে
       detectSessionInUrl: true
     }
   });
 
-  // Auth listener আগে চালু করা হচ্ছে
   sb.auth.onAuthStateChange((evt, session) => {
     state.session = session;
 
-    // Supabase Auth callback-এর ভিতরে সরাসরি await করা যাবে না
     Promise.resolve().then(async () => {
       if (evt === 'PASSWORD_RECOVERY') {
         location.hash = '#/reset-password';
@@ -78,7 +107,6 @@ export async function initBackend() {
       if (evt === 'SIGNED_OUT') {
         state.session = null;
         state.profile = null;
-
         emit('signed_out');
         return;
       }
@@ -109,7 +137,6 @@ export async function initBackend() {
     });
   });
 
-  // আগের Session পড়া
   const { data, error } = await sb.auth.getSession();
 
   if (error) {
@@ -124,7 +151,6 @@ export async function initBackend() {
     state.profile = null;
   }
 
-  // PKCE callback-এর ?code= URL পরিষ্কার করা
   if (location.search.includes('code=')) {
     history.replaceState(
       null,
@@ -137,9 +163,7 @@ export async function initBackend() {
     registerDevice();
   }
 
-  // Auth initialization সম্পূর্ণ
   state.authReady = true;
-
   emit('auth_ready');
 
   return true;
@@ -169,7 +193,6 @@ export async function loadProfile() {
       return data;
     }
 
-    // Signup trigger তৈরি হতে সামান্য সময় লাগতে পারে
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
@@ -268,11 +291,6 @@ const safeName = (name) =>
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'file';
 
-/**
- * Upload a File.
- * Public buckets return a public URL.
- * Private bucket returns the object path.
- */
 export async function uploadFile(bucket, file, folder = '') {
   if (!sb) throw new Error('Supabase is not initialized');
 
@@ -353,4 +371,4 @@ export async function toggleBookmark(type, id, on) {
 
     if (error) throw error;
   }
-            }
+  }
