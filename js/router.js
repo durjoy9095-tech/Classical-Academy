@@ -1,4 +1,5 @@
-// Hash router + layout shells (public / student / admin).
+
+ // Hash router + layout shells (public / student / admin).
 import {
   html, put, icon, logoMark, $, $$, errMsg, skeleton
 } from './lib.js';
@@ -364,8 +365,7 @@ export async function render() {
 
   if (!a) return;
 
-  // গুরুত্বপূর্ণ: Supabase Auth চেক শেষ না হওয়া পর্যন্ত
-  // কোনো Login Redirect করা হবে না।
+  // Auth initialization শেষ না হওয়া পর্যন্ত redirect নয়
   if (!state.authReady) {
     put(
       a,
@@ -413,13 +413,14 @@ export async function render() {
 
   const o = found.opts;
 
-  // Auth Ready হওয়ার পরেই Session পরীক্ষা
+  // Login guard
   if (o.auth && !state.session) {
     return navigate(
       '/login?next=' + encodeURIComponent(rawPath)
     );
   }
 
+  // Session আছে, কিন্তু profile এখনো লোড হয়নি
   if (o.auth && state.session && !state.profile) {
     put(
       a,
@@ -437,6 +438,7 @@ export async function render() {
 
     await loadProfile();
 
+    // অন্য route এ চলে গেলে পুরোনো render থামাও
     if (!state.profile) {
       put(
         a,
@@ -458,6 +460,7 @@ export async function render() {
     }
   }
 
+  // Student profile completion
   if (
     o.auth &&
     state.profile?.role === 'student' &&
@@ -467,11 +470,13 @@ export async function render() {
     return navigate('/complete-profile');
   }
 
+  // Role permission check
   if (o.roles && !o.roles.includes(role())) {
     toastDenied();
     return navigate('/home');
   }
 
+  // Logged-in user guest page এ থাকলে redirect
   if (o.guestOnly && state.session) {
     return navigate(
       isStaff() && o.adminHome ? '/admin' : '/home'
@@ -567,19 +572,26 @@ export function resetShell() {
   shellKey = '';
 }
 
+// Router startup
 export function startRouter() {
   if (routerStarted) return;
 
   routerStarted = true;
 
-  // Auth initialization শেষ হলে Router আবার চালু হবে
+  // Auth state পরিবর্তন হলে Router পুনরায় render
   onAuth((event) => {
-    if (event === 'auth_ready') {
+    if (
+      event === 'auth_ready' ||
+      event === 'signed_in' ||
+      event === 'signed_out'
+    ) {
       render();
     }
   });
 
+  // URL route পরিবর্তন
   window.addEventListener('hashchange', render);
 
+  // প্রথম render
   render();
 }
