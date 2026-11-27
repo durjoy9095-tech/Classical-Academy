@@ -1,5 +1,4 @@
-
- // Hash router + layout shells (public / student / admin).
+// Hash router + layout shells (public / student / admin).
 import {
   html, put, icon, logoMark, $, $$, errMsg, skeleton
 } from './lib.js';
@@ -28,6 +27,7 @@ export function route(pattern, handler, opts = {}) {
 }
 
 // Student message inbox route
+// Profile-এর ভেতরের Message Box থেকে এই route খুলবে
 route('/messages', studentInbox, {
   auth: true,
   layout: 'student'
@@ -77,12 +77,6 @@ export const STUDENT_NAV = [
     label: 'পরীক্ষা',
     ic: 'exam',
     match: /^\/(exams|exam|result)/
-  },
-  {
-    to: '/messages',
-    label: 'মেসেজ',
-    ic: 'mail',
-    match: /^\/messages/
   },
   {
     to: '/profile',
@@ -607,4 +601,4 @@ export function startRouter() {
 
   // প্রথম render
   render();
-}
+ }
