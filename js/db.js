@@ -2,7 +2,8 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { deviceLabel } from './lib.js';
 
-const SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+const SDK =
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 
 export const configured =
   /^https:\/\/\S+$/.test(SUPABASE_URL) &&
@@ -29,6 +30,101 @@ const emit = (evt) => {
   listeners.forEach((fn) => fn(evt));
 };
 
+// ---------- Per-tab persistent auth storage ----------
+
+// আলাদা ট্যাবের আলাদা ID
+function getTabId() {
+  try {
+    let id = sessionStorage.getItem('ca_auth_tab_id');
+
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem('ca_auth_tab_id', id);
+    }
+
+    return id;
+  } catch {
+    // sessionStorage unavailable হলে fallback
+    let id = localStorage.getItem('ca_auth_fallback_tab_id');
+
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('ca_auth_fallback_tab_id', id);
+    }
+
+    return id;
+  }
+}
+
+// Supabase-এর session storage adapter
+function createTabAuthStorage() {
+  const tabId = getTabId();
+
+  const tabPrefix = `ca_tab_auth_${tabId}_`;
+  const persistentPrefix = 'ca_persistent_auth_';
+
+  return {
+    getItem(key) {
+      const tabKey = tabPrefix + key;
+      const persistentKey = persistentPrefix + key;
+
+      // প্রথমে এই ট্যাবের নিজস্ব session
+      let value = localStorage.getItem(tabKey);
+
+      if (value) return value;
+
+      // Chrome পুনরায় খুললে persistent backup
+      value = localStorage.getItem(persistentKey);
+
+      if (value) {
+        localStorage.setItem(tabKey, value);
+        return value;
+      }
+
+      // আগের sessionStorage session থাকলে migrate
+      try {
+        value = sessionStorage.getItem(key);
+
+        if (value) {
+          localStorage.setItem(tabKey, value);
+          localStorage.setItem(persistentKey, value);
+          return value;
+        }
+      } catch {
+        // Storage unavailable
+      }
+
+      return null;
+    },
+
+    setItem(key, value) {
+      localStorage.setItem(tabPrefix + key, value);
+
+      // Browser বন্ধ হলেও session রাখবে
+      localStorage.setItem(
+        persistentPrefix + key,
+        value
+      );
+    },
+
+    removeItem(key) {
+      // শুধু বর্তমান ট্যাবের session মুছবে
+      localStorage.removeItem(tabPrefix + key);
+
+      // নতুন ট্যাবের default session backup সরাবে
+      localStorage.removeItem(
+        persistentPrefix + key
+      );
+
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        // Ignore
+      }
+    }
+  };
+}
+
 // ---------- Supabase initialization ----------
 
 export async function initBackend() {
@@ -43,18 +139,17 @@ export async function initBackend() {
   sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       flowType: 'pkce',
-      storage: window.sessionStorage,
+      storage: createTabAuthStorage(),
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true
     }
   });
 
-  // Subscribe before reading the session.
+  // Auth listener
   sb.auth.onAuthStateChange((evt, session) => {
     state.session = session;
 
-    // Do not await Supabase calls directly inside this callback.
     setTimeout(async () => {
       if (evt === 'PASSWORD_RECOVERY') {
         location.hash = '#/reset-password';
@@ -91,7 +186,7 @@ export async function initBackend() {
     await loadProfile();
   }
 
-  // Remove the PKCE code from the URL.
+  // URL থেকে PKCE code সরানো
   if (location.search) {
     history.replaceState(
       null,
@@ -134,20 +229,24 @@ export async function loadProfile() {
       console.error('Profile load error:', error);
     }
 
-    // Signup trigger may need a moment.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) =>
+      setTimeout(resolve, 500)
+    );
   }
 
   state.profile = null;
   return null;
 }
 
-export const uid = () => state.session?.user?.id;
+export const uid = () =>
+  state.session?.user?.id;
 
-export const role = () => state.profile?.role || null;
+export const role = () =>
+  state.profile?.role || null;
 
 export const isStaff = () =>
-  ['super_admin', 'admin', 'moderator', 'teacher'].includes(role());
+  ['super_admin', 'admin', 'moderator', 'teacher']
+    .includes(role());
 
 export const isAdminUp = () =>
   ['super_admin', 'admin'].includes(role());
@@ -228,13 +327,14 @@ const safeName = (name) =>
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'file';
 
-/**
- * Upload a file.
- * Public buckets return a public URL.
- * Private bucket returns the object path.
- */
-export async function uploadFile(bucket, file, folder = '') {
-  if (!sb) throw new Error('Supabase is not initialized');
+export async function uploadFile(
+  bucket,
+  file,
+  folder = ''
+) {
+  if (!sb) {
+    throw new Error('Supabase is not initialized');
+  }
 
   const path =
     `${folder ? folder + '/' : ''}` +
@@ -259,8 +359,14 @@ export async function uploadFile(bucket, file, folder = '') {
     .data.publicUrl;
 }
 
-export async function signedUrl(path, secs = 3600, download) {
-  if (!sb) throw new Error('Supabase is not initialized');
+export async function signedUrl(
+  path,
+  secs = 3600,
+  download
+) {
+  if (!sb) {
+    throw new Error('Supabase is not initialized');
+  }
 
   const { data, error } = await sb.storage
     .from('private-files')
@@ -295,7 +401,11 @@ export async function getBookmarkSet() {
   );
 }
 
-export async function toggleBookmark(type, id, on) {
+export async function toggleBookmark(
+  type,
+  id,
+  on
+) {
   if (!sb || !uid()) {
     throw new Error('Please login first');
   }
@@ -320,4 +430,4 @@ export async function toggleBookmark(type, id, on) {
 
     if (error) throw error;
   }
-      }
+}
