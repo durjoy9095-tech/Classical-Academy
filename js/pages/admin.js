@@ -1104,3 +1104,103 @@ sections['inbox'] = async ({ root }) => {
       if (e.key === 'Enter') searchStudent();
     });
 };
+
+/* ==========================================
+   MODERATOR PANEL - NEW SECTION PLACEHOLDERS
+   Existing admin.js features remain untouched
+========================================== */
+
+const moderatorNewSections = [
+  'videos',
+  'menu',
+  'subscriptions',
+  'core',
+  'misc',
+
+  'content-review',
+  'lesson-review',
+  'notes-review',
+  'pdf-review',
+  'slides-review',
+  'question-bank',
+  'exam-review',
+  'content-reports',
+
+  'store-books',
+  'store-slides',
+  'store-products',
+  'product-details',
+  'stock',
+  'order-status',
+  'customer-support',
+
+  'class-students',
+  'group-students',
+  'registration-report',
+  'course-enrollment-report',
+  'user-activity-report',
+
+  'promo-codes',
+  'campaigns',
+  'banners',
+  'referrals',
+  'notification-campaigns',
+  'marketing-review',
+
+  'student-reports',
+  'comment-reports',
+  'spam',
+  'inappropriate-content',
+  'warnings',
+  'content-hide',
+  'admin-escalation',
+
+  'tickets',
+  'ticket-assign',
+  'ticket-replies',
+  'ticket-priority',
+  'ticket-status',
+  'complaint-history',
+
+  'faq',
+  'feedback',
+  'app-notices',
+  'help-articles',
+  'error-reports',
+  'general-settings',
+
+  'activity-log'
+];
+
+// নতুন section-গুলোর জন্য প্রাথমিক পেজ
+moderatorNewSections.forEach((sectionName) => {
+  // আগে থেকে section থাকলে সেটি পরিবর্তন করা হবে না
+  if (sections[sectionName]) return;
+
+  sections[sectionName] = async ({ root }) => {
+    put(
+      root,
+      html`
+        <div class="card pad">
+          <h2>মডারেটর ম্যানেজমেন্ট</h2>
+
+          <p class="muted">
+            এই ফিচারের পেজ তৈরি করার কাজ পরবর্তী ধাপে সম্পন্ন হবে।
+          </p>
+
+          <div class="notice">
+            <strong>Classical Academy</strong>
+            <p>
+              এই অংশটি প্রস্তুত করা হচ্ছে।
+              পরবর্তী আপডেটে এখানে ব্যবস্থাপনার সুবিধা যুক্ত হবে।
+            </p>
+          </div>
+
+          <a class="btn primary" href="#/admin">
+            ড্যাশবোর্ডে ফিরে যান
+          </a>
+        </div>
+      `
+    );
+  };
+});
