@@ -689,8 +689,34 @@ function buildShell(layout) {
     });
 
     $('#adm-out').addEventListener('click', async () => {
-      await signOut();
-      navigate('/');
+  const button = $('#adm-out');
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'লগআউট হচ্ছে...';
+  }
+
+  try {
+    await signOut();
+
+    // Logout-এর পর Login পেজে যাও
+    location.hash = '#/login';
+
+    // পুরোনো পেজ পুনরায় render
+    render();
+
+  } catch (error) {
+    console.error('Logout error:', error);
+
+    alert(
+      'লগআউট করা যায়নি। আবার চেষ্টা করুন।'
+    );
+
+    if (button) {
+      button.disabled = false;
+    }
+  }
+});
     });
   } else {
     put(
