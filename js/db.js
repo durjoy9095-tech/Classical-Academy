@@ -26,49 +26,10 @@ export const onAuth = (fn) => {
 };
 
 const emit = (evt) => {
-  listeners.forEach((fn) => {
-    try {
-      fn(evt);
-    } catch (error) {
-      console.error('Auth listener error:', error);
-    }
-  });
+  listeners.forEach((fn) => fn(evt));
 };
 
-// ---------- Tab-specific persistent auth storage ----------
-
-// এই ID একই Tab-এ Refresh করলে থাকবে।
-// Chrome Tab restore করলে সাধারণত এটিও restore হয়।
-function getTabId() {
-  let id = sessionStorage.getItem('ca_auth_tab_id');
-
-  if (!id) {
-    id = crypto.randomUUID();
-    sessionStorage.setItem('ca_auth_tab_id', id);
-  }
-
-  return id;
-}
-
-// Supabase-এর Auth storage প্রতিটি Tab-এর জন্য আলাদা।
-function createTabAuthStorage() {
-  const tabId = getTabId();
-  const prefix = `ca_supabase_auth_${tabId}_`;
-
-  return {
-    getItem(key) {
-      return localStorage.getItem(prefix + key);
-    },
-
-    setItem(key, value) {
-      localStorage.setItem(prefix + key, value);
-    },
-
-    removeItem(key) {
-      localStorage.removeItem(prefix + key);
-    }
-  };
-}
+// ---------- Supabase initialization ----------
 
 export async function initBackend() {
   if (!configured) {
@@ -77,81 +38,61 @@ export async function initBackend() {
     return false;
   }
 
-  if (sb) return true;
-
   const { createClient } = await import(SDK);
 
   sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       flowType: 'pkce',
-
-      // Tab অনুযায়ী আলাদা Persistent Session
-      storage: createTabAuthStorage(),
-
+      storage: window.sessionStorage,
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true
     }
   });
 
+  // Subscribe before reading the session.
   sb.auth.onAuthStateChange((evt, session) => {
     state.session = session;
 
-    Promise.resolve().then(async () => {
+    // Do not await Supabase calls directly inside this callback.
+    setTimeout(async () => {
       if (evt === 'PASSWORD_RECOVERY') {
         location.hash = '#/reset-password';
-        emit('password_recovery');
         return;
       }
 
       if (evt === 'SIGNED_OUT') {
-        state.session = null;
         state.profile = null;
         emit('signed_out');
         return;
       }
 
       if (
-        (evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED') &&
-        session
+        evt === 'SIGNED_IN' &&
+        session &&
+        state.profile?.id !== session.user.id
       ) {
-        state.session = session;
-
-        if (state.profile?.id !== session.user.id) {
-          await loadProfile();
-        }
-
-        if (state.profile) {
-          registerDevice();
-        }
-
+        await loadProfile();
+        registerDevice();
         emit('signed_in');
       }
-
-      if (evt === 'USER_UPDATED' && session) {
-        state.session = session;
-        emit('user_updated');
-      }
-    }).catch((error) => {
-      console.error('Auth event error:', error);
-    });
+    }, 0);
   });
 
   const { data, error } = await sb.auth.getSession();
 
   if (error) {
-    console.error('Session restore error:', error);
+    console.error('Session load error:', error);
   }
 
   state.session = data?.session || null;
 
   if (state.session) {
     await loadProfile();
-  } else {
-    state.profile = null;
   }
 
-  if (location.search.includes('code=')) {
+  // Remove the PKCE code from the URL.
+  if (location.search) {
     history.replaceState(
       null,
       '',
@@ -169,30 +110,31 @@ export async function initBackend() {
   return true;
 }
 
+// ---------- Profile ----------
+
 export async function loadProfile() {
-  if (!state.session?.user?.id || !sb) {
+  if (!state.session || !sb) {
     state.profile = null;
     return null;
   }
-
-  const userId = state.session.user.id;
 
   for (let i = 0; i < 3; i++) {
     const { data, error } = await sb
       .from('profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('id', state.session.user.id)
       .maybeSingle();
-
-    if (error) {
-      console.error('Profile loading error:', error);
-    }
 
     if (data) {
       state.profile = data;
       return data;
     }
 
+    if (error) {
+      console.error('Profile load error:', error);
+    }
+
+    // Signup trigger may need a moment.
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
@@ -210,6 +152,8 @@ export const isStaff = () =>
 export const isAdminUp = () =>
   ['super_admin', 'admin'].includes(role());
 
+// ---------- Sign out ----------
+
 export async function signOut() {
   if (!sb) return;
 
@@ -219,11 +163,9 @@ export async function signOut() {
 
   state.session = null;
   state.profile = null;
-
-  emit('signed_out');
 }
 
-// ---------- device + activity ----------
+// ---------- Device + activity ----------
 
 export function deviceId() {
   let id = localStorage.getItem('ca_device_id');
@@ -239,23 +181,17 @@ export function deviceId() {
 export async function registerDevice() {
   if (!uid() || !sb) return;
 
-  const { error } = await sb
-    .from('devices')
-    .upsert(
-      {
-        user_id: uid(),
-        device_id: deviceId(),
-        label: deviceLabel(),
-        last_seen: new Date().toISOString()
-      },
-      {
-        onConflict: 'user_id,device_id'
-      }
-    );
-
-  if (error) {
-    console.warn('Device registration failed:', error.message);
-  }
+  await sb.from('devices').upsert(
+    {
+      user_id: uid(),
+      device_id: deviceId(),
+      label: deviceLabel(),
+      last_seen: new Date().toISOString()
+    },
+    {
+      onConflict: 'user_id,device_id'
+    }
+  );
 }
 
 export function logActivity(action, meta = {}) {
@@ -270,7 +206,7 @@ export function logActivity(action, meta = {}) {
     .then(() => {}, () => {});
 }
 
-// ---------- settings ----------
+// ---------- Settings ----------
 
 export async function getSetting(key) {
   if (!sb) return {};
@@ -284,18 +220,25 @@ export async function getSetting(key) {
   return data?.value || {};
 }
 
-// ---------- storage ----------
+// ---------- Storage ----------
 
 const safeName = (name) =>
-  name.toLowerCase()
+  name
+    .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'file';
 
+/**
+ * Upload a file.
+ * Public buckets return a public URL.
+ * Private bucket returns the object path.
+ */
 export async function uploadFile(bucket, file, folder = '') {
   if (!sb) throw new Error('Supabase is not initialized');
 
   const path =
-    `${folder ? folder + '/' : ''}${Date.now()}-${safeName(file.name)}`;
+    `${folder ? folder + '/' : ''}` +
+    `${Date.now()}-${safeName(file.name)}`;
 
   const { error } = await sb.storage
     .from(bucket)
@@ -306,9 +249,14 @@ export async function uploadFile(bucket, file, folder = '') {
 
   if (error) throw error;
 
-  return bucket === 'private-files'
-    ? path
-    : sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  if (bucket === 'private-files') {
+    return path;
+  }
+
+  return sb.storage
+    .from(bucket)
+    .getPublicUrl(path)
+    .data.publicUrl;
 }
 
 export async function signedUrl(path, secs = 3600, download) {
@@ -327,7 +275,7 @@ export async function signedUrl(path, secs = 3600, download) {
   return data.signedUrl;
 }
 
-// ---------- bookmarks ----------
+// ---------- Bookmarks ----------
 
 export async function getBookmarkSet() {
   if (!sb || !uid()) return new Set();
@@ -341,14 +289,15 @@ export async function getBookmarkSet() {
 
   return new Set(
     (data || []).map(
-      (bookmark) => `${bookmark.item_type}:${bookmark.item_id}`
+      (bookmark) =>
+        `${bookmark.item_type}:${bookmark.item_id}`
     )
   );
 }
 
 export async function toggleBookmark(type, id, on) {
   if (!sb || !uid()) {
-    throw new Error('লগইন করা নেই');
+    throw new Error('Please login first');
   }
 
   if (on) {
@@ -371,4 +320,4 @@ export async function toggleBookmark(type, id, on) {
 
     if (error) throw error;
   }
-  }
+      }
