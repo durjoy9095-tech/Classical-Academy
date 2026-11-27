@@ -7,6 +7,7 @@ import {
 import {
   state, role, isStaff, signOut, onAuth
 } from './db.js';
+import { studentInbox } from './student-inbox.js';
 
 const routes = [];
 
